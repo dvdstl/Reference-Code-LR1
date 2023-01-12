@@ -1,0 +1,136 @@
+const int trigPin = 25;
+const int echoPin = 26;
+float angle = 0;
+float distance = 999;
+long duration;
+float distancecm;
+int leftMotor_speed, rightMotor_speed, servoAngle;
+#include <math.h>
+#include <MPU6050_tockn.h>
+#include <Wire.h>
+#include <HCSR04.h>
+MPU6050 mpu6050(Wire);
+#define I2C_SLAVE_ADDR 0x04 
+int x = 0;
+
+UltraSonicDistanceSensor distanceSensor(25, 26);  // Initializes HC-SR04 distance sensor that connects onto digital pin 12 and 13
+
+void setup()
+{
+  Serial.begin(9600);
+  Wire.begin();   // joins i^2c bus (ESP - Nano)
+  pinMode(trigPin, OUTPUT); // Sets the triggerPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+  mpu6050.begin();
+  mpu6050.calcGyroOffsets(true);
+}
+
+float AccelerationMeasure()
+{
+  mpu6050.update();
+  return (mpu6050.getAngles());
+}
+
+float UltrasonicSensor()
+{
+  float distance;
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10); //minimum as stated in DataSheet
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  return (duration * 0.034 / 2);
+}
+
+void loop()
+{
+  //Forward 1 second
+  leftMotor_speed = 255;
+  rightMotor_speed = 255;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  delay(1000);
+  //stop
+  leftMotor_speed = 0;
+  rightMotor_speed = 0;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  delay(1000);
+  //Rotate 180 degrees clockwise (left)
+  leftMotor_speed = 100;
+  rightMotor_speed = 250;
+  servoAngle = 72;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  while (angle < 180) { //when going clockwise (left), angle becomes positive
+    angle = AccelerationMeasure();
+  }
+  //stop
+  leftMotor_speed = 0;
+  rightMotor_speed = 0;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  delay(1000);
+  //reverse until 10cm away from wall
+  leftMotor_speed = -100;
+  rightMotor_speed = -100;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  do {
+    distance = ultrasonic();
+    delay(100);
+  }
+  while (distance >= 10);
+  distance = 999;
+  //stop
+  leftMotor_speed = 0;
+  rightMotor_speed = 0;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  delay(100);
+  //Rotate 90 degrees clockwise (right turn)
+  leftMotor_speed = 250;
+  rightMotor_speed = 100; // Any lower and the motors will be powered but not enough power to turn wheels... car will not move
+  servoAngle = 92;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  while (angle > 90) { // while going clockwise, the angle goes negative
+    angle = AccelerationMeasure();
+  }
+
+  //stop
+  leftMotor_speed = 0;
+  rightMotor_speed = 0;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  delay(1000);
+
+  //reverse untill 10cm from wall
+  leftMotor_speed = -100;
+  rightMotor_speed = -100;
+  servoAngle = 82;
+
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  do {
+    distance = UltrasonicSensor();
+    delay(100);
+  } while (distance >= 10);
+  distance = 999;
+  //stop
+  leftMotor_speed = 0;
+  rightMotor_speed = 0;
+  servoAngle = 82;
+  TransmitToArduino(leftMotor_speed, rightMotor_speed, servoAngle);
+  delay(1000);
+}
+
+void TransmitToArduino(int leftMotor_speed, int rightMotor_speed, int servoAngle)
+{
+  Wire.beginTransmission(I2C_SLAVE_ADDR); // transmit to device ESP
+  Wire.write((byte)((leftMotor_speed & 0x0000FF00) >> 8));    // first byte of x, containing bits 16 to 9
+  Wire.write((byte)(leftMotor_speed & 0x000000FF));           // second byte of x, containing the 8 LSB - bits 8 to 1
+  Wire.write((byte)((rightMotor_speed & 0x0000FF00) >> 8));   // first byte of y, containing bits 16 to 9
+  Wire.write((byte)(rightMotor_speed & 0x000000FF));          // second byte of y, containing the 8 LSB - bits 8 to 1
+  Wire.write((byte)((servoAngle & 0x0000FF00) >> 8));    // first byte of x, containing bits 16 to 9
+  Wire.write((byte)(servoAngle & 0x000000FF));
+  Wire.endTransmission();   // stop transmitting
+}
